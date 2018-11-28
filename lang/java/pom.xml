@@ -103,6 +103,7 @@
     <module>protobuf</module>
     <module>thrift</module>
     <module>archetypes</module>
+    <module>integration-test</module>
   </modules>
 
   <build>
