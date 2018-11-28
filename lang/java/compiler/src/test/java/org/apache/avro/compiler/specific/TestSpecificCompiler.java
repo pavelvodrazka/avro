@@ -17,6 +17,8 @@
  */
 package org.apache.avro.compiler.specific;
 
+import static org.apache.avro.compiler.specific.SpecificCompiler.DateTimeLogicalTypeImplementation.JODA;
+import static org.apache.avro.compiler.specific.SpecificCompiler.DateTimeLogicalTypeImplementation.JSR310;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -33,6 +35,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.avro.AvroTestUtil;
@@ -46,13 +49,20 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticListener;
 import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
 @RunWith(JUnit4.class)
 public class TestSpecificCompiler {
+  private static final Logger LOG = LoggerFactory.getLogger(TestSpecificCompiler.class);
+
   private final String schemaSrcPath = "src/test/resources/simple_record.avsc";
   private final String velocityTemplateDir =
       "src/main/velocity/org/apache/avro/compiler/specific/templates/java/classic/";
@@ -93,11 +103,33 @@ public class TestSpecificCompiler {
       javaFiles.add(o.writeToDestination(null, dstDir));
     }
 
+    final List<Diagnostic<?>> warnings = new ArrayList<Diagnostic<?>>();
+    DiagnosticListener<JavaFileObject> diagnosticListener = new DiagnosticListener<JavaFileObject>() {
+      @Override
+      public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
+        switch (diagnostic.getKind()) {
+        case ERROR:
+          // Do not add these to warnings becuase they will fail the compile, anyway.
+          LOG.error("{}", diagnostic);
+          break;
+        case WARNING:
+        case MANDATORY_WARNING:
+          LOG.warn("{}", diagnostic);
+          warnings.add(diagnostic);
+          break;
+        case NOTE:
+        case OTHER:
+          LOG.debug("{}", diagnostic);
+          break;
+        }
+      }
+    };
     JavaCompiler.CompilationTask cTask = compiler.getTask(null, fileManager,
-            null, null, null, fileManager.getJavaFileObjects(
-                    javaFiles.toArray(new File[javaFiles.size()])));
+            diagnosticListener, Collections.singletonList("-Xlint:all"), null,
+            fileManager.getJavaFileObjects(javaFiles.toArray(new File[javaFiles.size()])));
     boolean compilesWithoutError = cTask.call();
     assertTrue(compilesWithoutError);
+    assertEquals("Warnings produced when compiling generated code with -Xlint:all", 0, warnings.size());
   }
 
   private static Schema createSampleRecordSchema(int numStringFields, int numDoubleFields) {
@@ -112,9 +144,13 @@ public class TestSpecificCompiler {
   }
 
   private SpecificCompiler createCompiler() throws IOException {
+    return createCompiler(JODA);
+  }
+
+  private SpecificCompiler createCompiler(SpecificCompiler.DateTimeLogicalTypeImplementation dateTimeLogicalTypeImplementation) throws IOException {
     Schema.Parser parser = new Schema.Parser();
     Schema schema = parser.parse(this.src);
-    SpecificCompiler compiler = new SpecificCompiler(schema);
+    SpecificCompiler compiler = new SpecificCompiler(schema, dateTimeLogicalTypeImplementation);
     compiler.setTemplateDir(this.velocityTemplateDir);
     compiler.setStringType(StringType.CharSequence);
     return compiler;
@@ -378,6 +414,26 @@ public class TestSpecificCompiler {
   }
 
   @Test
+  public void testJavaTypeWithJsr310DateTimeTypes() throws Exception {
+    SpecificCompiler compiler = createCompiler(JSR310);
+
+    Schema dateSchema = LogicalTypes.date()
+      .addToSchema(Schema.create(Schema.Type.INT));
+    Schema timeSchema = LogicalTypes.timeMillis()
+      .addToSchema(Schema.create(Schema.Type.INT));
+    Schema timestampSchema = LogicalTypes.timestampMillis()
+      .addToSchema(Schema.create(Schema.Type.LONG));
+
+    // Date/time types should always use upper level java classes
+    Assert.assertEquals("Should use java.time.LocalDate for date type",
+      "java.time.LocalDate", compiler.javaType(dateSchema));
+    Assert.assertEquals("Should use java.time.LocalTime for time-millis type",
+      "java.time.LocalTime", compiler.javaType(timeSchema));
+    Assert.assertEquals("Should use java.time.Instant for timestamp-millis type",
+      "java.time.Instant", compiler.javaType(timestampSchema));
+  }
+
+  @Test
   public void testJavaUnbox() throws Exception {
     SpecificCompiler compiler = createCompiler();
     compiler.setEnableDecimalLogicalType(false);
@@ -412,7 +468,26 @@ public class TestSpecificCompiler {
         "org.joda.time.LocalTime", compiler.javaUnbox(timeSchema));
     Assert.assertEquals("Should use Joda DateTime for timestamp-millis type",
         "org.joda.time.DateTime", compiler.javaUnbox(timestampSchema));
+  }
 
+  @Test
+  public void testJavaUnboxJsr310DateTime() throws Exception {
+    SpecificCompiler compiler = createCompiler(JSR310);
+
+    Schema dateSchema = LogicalTypes.date()
+      .addToSchema(Schema.create(Schema.Type.INT));
+    Schema timeSchema = LogicalTypes.timeMillis()
+      .addToSchema(Schema.create(Schema.Type.INT));
+    Schema timestampSchema = LogicalTypes.timestampMillis()
+      .addToSchema(Schema.create(Schema.Type.LONG));
+    // Date/time types should always use upper level java classes, even though
+    // their underlying representations are primitive types
+    Assert.assertEquals("Should use java.time.LocalDate for date type",
+      "java.time.LocalDate", compiler.javaUnbox(dateSchema));
+    Assert.assertEquals("Should use java.time.LocalTime for time-millis type",
+      "java.time.LocalTime", compiler.javaUnbox(timeSchema));
+    Assert.assertEquals("Should use java.time.Instant for timestamp-millis type",
+      "java.time.Instant", compiler.javaUnbox(timestampSchema));
   }
 
   @Test
@@ -470,9 +545,17 @@ public class TestSpecificCompiler {
   @Test
   public void testLogicalTypesWithMultipleFields() throws Exception {
     Schema logicalTypesWithMultipleFields = new Schema.Parser().parse(
-        new File("src/test/resources/simple_record.avsc"));
+        new File("src/test/resources/logical_types_with_multiple_fields.avsc"));
     assertCompilesWithJavaCompiler(
         new SpecificCompiler(logicalTypesWithMultipleFields).compile());
+  }
+
+  @Test
+  public void testLogicalTypesWithMultipleFieldsJsr310DateTime() throws Exception {
+    Schema logicalTypesWithMultipleFields = new Schema.Parser().parse(
+      new File("src/test/resources/logical_types_with_multiple_fields.avsc"));
+    assertCompilesWithJavaCompiler(
+      new SpecificCompiler(logicalTypesWithMultipleFields, JSR310).compile());
   }
 
   @Test
