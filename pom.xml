@@ -127,12 +127,11 @@
       <!-- Profile for generating all maven artifacts and documentation. -->
       <build>
         <plugins>
-          <plugin>
+          <!--plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
             <executions>
               <execution>
-                <!-- build javadoc jars per jar for publishing to maven -->
                 <id>module-javadocs</id>
                 <phase>package</phase>
                 <goals>
@@ -140,7 +139,6 @@
                 </goals>
               </execution>
               <execution>
-                <!-- build aggregate javadoc in parent only -->
                 <id>default-cli</id>
                 <goals>
                   <goal>aggregate</goal>
@@ -151,7 +149,7 @@
                 </configuration>
               </execution>
             </executions>
-          </plugin>
+          </plugin-->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-source-plugin</artifactId>
