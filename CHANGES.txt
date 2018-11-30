@@ -1,8 +1,10 @@
 Avro Change Log
 
-Avro 1.8.2 (10 April 2017)
+Avro 1.8.2-PR309 (10 April 2017)
 
   INCOMPATIBLE CHANGES
+
+    AVRO-2043: Move to Java 8. (Gabor Szadovszky)
 
   NEW FEATURES
 
@@ -15,6 +17,9 @@ Avro 1.8.2 (10 April 2017)
 
     AVRO-1932: Java: Allow setting the SchemaStore on generated classes. 
     (Niels Basjes)
+
+    [AVRO-2079] Add ability to use Java 8 date/time types instead of Joda time.
+    (pvorb)
 
   OPTIMIZATIONS
 
