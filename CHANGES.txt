@@ -1,6 +1,6 @@
 Avro Change Log
 
-Avro 1.8.2-PR309 (10 April 2017)
+Avro 1.8.2-PR329 (10 April 2017)
 
   INCOMPATIBLE CHANGES
 
